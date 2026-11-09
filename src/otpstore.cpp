@@ -24,7 +24,7 @@ bool OtpStore::nameValid(const char* name, String& err) {
     }
     size_t len = strlen(name);
     if (len == 0 || len > OTP_NAME_MAX) {
-        err = "name must be 1..32 chars";
+        err = "name must be 1..48 chars";
         return false;
     }
     for (size_t i = 0; i < len; ++i) {

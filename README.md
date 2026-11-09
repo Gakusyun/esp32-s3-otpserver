@@ -122,6 +122,13 @@ secret 的接受格式：
 
 长度要求 ≥ 8 字节（13 个 Base32 字符），否则拒绝。
 
+Google Authenticator 的「导出账户」给的是 `otpauth-migration://offline?data=<protobuf>`，
+一次打包多条，服务端**不直接吃**这种格式；用 `tools/import_migration.py` 在主机侧拆开再逐条导入：
+
+```bash
+python3 tools/import_migration.py --base http://192.168.4.4 uris.txt
+```
+
 `otpauth://` URI 里如果带了 `period` / `digits` / `algorithm`，服务端会校验必须等于 `30` / `6` / `SHA1`，不符直接 `400`（HOTP 也不支持）。URI 的 label 只在**请求里没给 `name`** 时才用作条目名，且非法字符会被替换成 `-`。
 
 ### `DELETE /otp/{name}` — 删除
@@ -190,7 +197,7 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 
 - 路径：LittleFS 上的 `/otp/secrets.json`（明文 Base32）
 - 格式：`{"version":1,"entries":[{"name":"...","secret":"..."}]}`
-- 整表常驻 RAM（32 条上限 × ~170B）
+- 整表常驻 RAM（32 条上限 × ~180B）
 - 写回是「写临时文件 → 删旧文件 → rename」，掉电不会留下半个文件
 - 文件损坏时**拒绝服务而不是覆盖**（宁可 503，也不静默抹掉你导入的密钥）
 
@@ -217,6 +224,9 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 python3 tools/e2e_test.py http://192.168.4.4
 ```
 
+`tools/import_migration.py` 是 Google Authenticator 迁移包导入器（见 API 一节），
+每条导入后会用本地 TOTP 实现核对设备返回的码，导入即验证。
+
 `e2e_test.py` 覆盖：RFC 向量出码一致性、6 位补零、`remaining` 范围、列表/导入/删除/404/409、
 非 TOTP 参数拒绝、三种导入写法，以及"响应里没有 secret"。
 
@@ -225,7 +235,8 @@ python3 tools/e2e_test.py http://192.168.4.4
 ## 9. 已知限制
 
 - 只支持 TOTP / SHA1 / 30 秒 / 6 位（故意不做可配置，减少出错面）
-- 条目上限 32，名字 1..32 字符（`A-Z a-z 0-9 . _ - @ +`）
+- 条目上限 32，名字 1..48 字节，允许 `A-Z a-z 0-9 . _ - @ +`
+- 名字里的 `@ + %` 等字符在 URL 里要做百分号编码（服务端会解码路径段，但不会把 `+` 当空格）
 - 没有鉴权、没有 HTTPS（局域网内明文 HTTP）
 - 没有 OTA 上传入口（分区已预留双槽，将来可加）
 - 不带 `Content-Type: application/json` 的纯 JSON 请求体拿不到原始字节（Arduino WebServer 会把
@@ -245,5 +256,6 @@ src/timekeeper.{h,cpp}  SNTP + 估算回退
 src/tinyotp/            tinyotp 移植（SHA1 / HMAC / 动态截断）
 tools/run_selftest.sh   RFC 6238 自检
 tools/e2e_test.py       端到端 API 验证
+tools/import_migration.py  Google Authenticator 导出包导入器
 src/secrets.h           Wi-Fi 凭据（不入库，见 .gitignore）
 ```

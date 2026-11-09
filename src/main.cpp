@@ -71,6 +71,32 @@ String urlDecode(const String& in) {
     return out;
 }
 
+// URL 路径段的百分号解码。注意与上面的 urlDecode 不同：路径里的 '+' 是字符本身，
+// 不是空格（那是 query 的规则），所以不能转成空格。
+String pathDecode(const String& in) {
+    String out;
+    out.reserve(in.length());
+    auto hexv = [](char h) -> int {
+        if (h >= '0' && h <= '9') return h - '0';
+        if (h >= 'a' && h <= 'f') return h - 'a' + 10;
+        if (h >= 'A' && h <= 'F') return h - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i < in.length(); ++i) {
+        char c = in[i];
+        if (c == '%' && i + 2 < in.length()) {
+            int hi = hexv(in[i + 1]), lo = hexv(in[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out += (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        out += c;
+    }
+    return out;
+}
+
 void sendJson(int code, const String& body) {
     server.sendHeader("Cache-Control", "no-store");
     server.send(code, "application/json", body);
@@ -432,6 +458,7 @@ void dispatch() {
     if (path.startsWith("/otp/")) {
         String name = path.substring(5);
         if (name.endsWith("/")) name = name.substring(0, name.length() - 1);
+        name = pathDecode(name);
         if (name.length() == 0) return sendError(404, "not found");
         if (m == HTTP_GET) return handleGet(name);
         if (m == HTTP_DELETE) return handleDelete(name);
