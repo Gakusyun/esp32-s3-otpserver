@@ -1,0 +1,12 @@
+# PlatformIO 构建产物
+.pio/
+.vscode/
+
+# Wi-Fi 凭据（复制 src/secrets.example.h -> src/secrets.h，不入库）
+src/secrets.h
+
+# 杂项
+__pycache__/
+*.bak
+.DS_Store
+._*
