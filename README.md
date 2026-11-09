@@ -144,7 +144,28 @@ curl -X DELETE http://otpserver.local/otp/github    # 204，无响应体
 
 ---
 
-## 4. 时间源
+## 4. agent 用法示例
+
+```bash
+# 一次性拿全部码，挑自己要的
+curl -s http://otpserver.local/otp | jq -r '.entries[] | "\(.name)\t\(.code)\t\(.remaining)s"'
+
+# 只要一个
+code=$(curl -s http://otpserver.local/otp/github | jq -r .code)
+
+# 先看时间可不可信，再看码
+curl -s http://otpserver.local/status | jq '.time'
+```
+
+给 agent 的三条建议：
+
+1. 取码前不在意 503 —— 那是「还没对上时」，重试几秒即可
+2. `remaining` 很小时（比如 < 5s）等一下再取，避免拿到即将过期的码去登录
+3. `GET /otp` 一次拿全部比逐个 `GET /otp/{name}` 更省事；接口都用短连接，没有状态
+
+---
+
+## 5. 时间源
 
 TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，每次上电都从 1970 开始：
 
@@ -159,10 +180,13 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 - SNTP 服务器在 `src/secrets.h` 里配（默认 `ntp.aliyun.com` / `cn.pool.ntp.org`）
 - 对时成功的时刻每 **60 秒**落盘一次（NVS `otp/ts`），所以断网重启后估算起点最多旧 1 分钟
 - SNTP 停掉后系统时钟会继续走，但长时间不同步会累积漂移；`/status` 的 `synced` 能让你判断该不该信
+- ⚠️ 估算模式的隐藏前提：**断电时间不能长**。`last_sync + uptime` 不知道关机期间过了多久，
+  断电几小时/几天后估算会偏几小时/几天（不是几秒）。这种场景应该等对时成功再用，
+  或者把设备接在一个能通 NTP 的网络里。
 
 ---
 
-## 5. 存储
+## 6. 存储
 
 - 路径：LittleFS 上的 `/otp/secrets.json`（明文 Base32）
 - 格式：`{"version":1,"entries":[{"name":"...","secret":"..."}]}`
@@ -174,7 +198,7 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 
 ---
 
-## 6. 安全模型（务必读完）
+## 7. 安全模型（务必读完）
 
 1. **无鉴权**：局域网内任何设备 / 任何 agent 都能读到你的所有 OTP。前提是 4.x 段受控（见 `/root/esp32/AGENTS.md`）。需要边界的话，下一步是加 Bearer Token——故意没做，保持"最小"。
 2. **不能导出 ≠ 不能读取**：API 层拿不到 secret，但 secret 是**明文**存在 Flash 里的。能物理接触板子并 `esptool read_flash` 的人依然能读出来。要防这个得上 eFuse 加密分区，成本高得多，没做。
@@ -183,7 +207,7 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 
 ---
 
-## 7. 测试
+## 8. 测试
 
 ```bash
 # 算法层：RFC 6238 官方测试向量，主机侧 g++ 编译运行（不用板子）
@@ -198,7 +222,7 @@ python3 tools/e2e_test.py http://192.168.4.4
 
 ---
 
-## 8. 已知限制
+## 9. 已知限制
 
 - 只支持 TOTP / SHA1 / 30 秒 / 6 位（故意不做可配置，减少出错面）
 - 条目上限 32，名字 1..32 字符（`A-Z a-z 0-9 . _ - @ +`）
@@ -209,7 +233,7 @@ python3 tools/e2e_test.py http://192.168.4.4
 
 ---
 
-## 9. 目录
+## 10. 目录
 
 ```
 platformio.ini          工具链 / 目标板
