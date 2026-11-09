@@ -110,7 +110,9 @@ CodeInfo makeCode(const OtpEntry& e) {
 }
 
 void addTimeFields(JsonObject o, const CodeInfo& c) {
-    o["code"] = c.code;
+    // 必须包一层 String：ArduinoJson 对 const char* 只存指针不拷贝，
+    // 而 CodeInfo 是栈上临时对象，直接赋指针会在 serializeJson() 之前失效。
+    o["code"] = String(c.code);
     o["remaining"] = c.remaining;
     o["period"] = kPeriod;
     o["digits"] = kDigits;
@@ -148,6 +150,14 @@ bool parseOtpauth(const String& uri, String& name, String& secret, String& err) 
     int colon = label.lastIndexOf(':');
     if (colon >= 0) label = label.substring(colon + 1);
     label.trim();
+    // label 里可能有 ':'、'/'、空格、中文 issuer 等不能进 URL 路径的字符，
+    // 只在调用方没显式给 name 时才用它，这里统一归一化（调用方想精确控制就自己给 name）。
+    for (size_t i = 0; i < label.length(); ++i) {
+        char c = label[i];
+        bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '.' || c == '_' || c == '-' || c == '@' || c == '+';
+        if (!ok) label.setCharAt(i, '-');
+    }
 
     String issuer;
     if (qmark >= 0) {
@@ -241,6 +251,10 @@ void handleStatus() {
     t["last_sync_epoch"] = clockkeeper.lastSyncEpoch();
     if (clockkeeper.valid()) t["epoch"] = clockkeeper.epoch();
     t["remaining"] = clockkeeper.valid() ? (uint32_t)(kPeriod - (clockkeeper.epoch() % kPeriod)) : 0;
+    if (!clockkeeper.synced() && clockkeeper.valid()) {
+        // 估算模式：能出码，但可能漂（上次对时 + 开机秒数），调用方自己决定信不信
+        t["warning"] = "time is estimated from last sync + uptime; codes may drift";
+    }
 
     JsonObject s = doc["store"].to<JsonObject>();
     s["entries"] = store.count();
@@ -305,6 +319,22 @@ void handleDelete(const String& name) {
 
 void handleImport() {
     String body = server.arg("plain");
+    // curl -d 默认发 Content-Type: application/x-www-form-urlencoded，这种情况下 JSON/URI
+    // 会被 WebServer 当成一堆“表单参数”拆开（body 里的 '=' 和 '&' 都是分隔符）。
+    // 这里把参数拼回去还原原始请求体，免得调用方少写一个 -H 就直接 400。
+    if (body.length() == 0 && server.args() > 0) {
+        String rebuilt;
+        for (int i = 0; i < server.args(); ++i) {
+            if (i) rebuilt += '&';
+            rebuilt += server.argName(i);
+            String v = server.arg(i);
+            if (v.length() > 0) {
+                rebuilt += '=';
+                rebuilt += v;
+            }
+        }
+        if (rebuilt.startsWith("{") || rebuilt.startsWith("otpauth://")) body = rebuilt;
+    }
     body.trim();
 
     String name;
@@ -325,10 +355,18 @@ void handleImport() {
         secret = (const char*)(doc["secret"] | "");
         uri = (const char*)(doc["otpauth"] | "");
     } else {
-        // 空请求体：允许用 query 参数，方便 curl 一行搞定
+        // 空请求体：允许用 query 参数或表单字段，方便 curl 一行搞定
         name = server.arg("name");
         secret = server.arg("secret");
         uri = server.arg("otpauth");
+        if (name.length() == 0 && secret.length() == 0 && uri.length() == 0) {
+            // WebServer 在 Content-Type 为 application/x-www-form-urlencoded 时会把
+            // 请求体拆成参数，拿不到原始字符串；没带 header 的 JSON 请求会落到这里。
+            sendError(400,
+                      "no usable body: POST JSON with 'Content-Type: application/json', "
+                      "or use form/query fields (name=...&secret=...)");
+            return;
+        }
     }
 
     if (uri.length() > 0) {
@@ -361,13 +399,14 @@ void handleImport() {
 
     Serial.printf("[api] 导入 %s (%u bytes)\n", name.c_str(), (unsigned)key_len);
 
+    // 先把码算出来（CodeInfo 在整个函数内都有效），再拼响应
+    CodeInfo c;
+    const OtpEntry* e = store.find(name.c_str());
+    if (e) c = makeCode(*e);
+
     JsonDocument doc;
     doc["name"] = name;
-    if (clockkeeper.valid()) {
-        const OtpEntry* e = store.find(name.c_str());
-        CodeInfo c = makeCode(*e);
-        addTimeFields(doc.as<JsonObject>(), c);
-    }
+    if (c.ok) addTimeFields(doc.as<JsonObject>(), c);
     String out;
     serializeJson(doc, out);
     sendJson(201, out);

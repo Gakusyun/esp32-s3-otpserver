@@ -13,7 +13,7 @@ constexpr int kFormatVersion = 1;
 
 bool isNameChar(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' ||
-           c == '_' || c == '-';
+           c == '_' || c == '-' || c == '@' || c == '+';
 }
 } // namespace
 
@@ -29,7 +29,7 @@ bool OtpStore::nameValid(const char* name, String& err) {
     }
     for (size_t i = 0; i < len; ++i) {
         if (!isNameChar(name[i])) {
-            err = "name may only contain A-Z a-z 0-9 . _ -";
+            err = "name may only contain A-Z a-z 0-9 . _ - @ +";
             return false;
         }
     }

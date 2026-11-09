@@ -5,7 +5,7 @@
 
 namespace {
 constexpr uint64_t kValidAfter = 1600000000ULL; // 2020-09-13，早于此的时间一定是没对上时
-constexpr uint32_t kPersistIntervalMs = 600000; // 每 10 分钟落盘一次，重启后估算起点才够新
+constexpr uint32_t kPersistIntervalMs = 60000;  // 每 60 秒落盘一次：断网重启后的估算起点最多旧 1 分钟
 Preferences prefs;
 } // namespace
 
