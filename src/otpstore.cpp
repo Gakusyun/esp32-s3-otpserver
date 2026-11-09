@@ -74,6 +74,7 @@ bool OtpStore::load() {
     }
 
     JsonArray arr = doc["entries"].as<JsonArray>();
+    int dropped = 0; // 超出编译期上限的条目数（正常情况下写不出这种文件，只可能是改了宏或手改了 json）
     for (JsonObject o : arr) {
         const char* name = o["name"] | "";
         const char* secret = o["secret"] | "";
@@ -89,14 +90,18 @@ bool OtpStore::load() {
             continue;
         }
         if (n_ >= OTP_MAX_ENTRIES) {
-            Serial.println("[store] 条目数超过上限，其余忽略");
-            break;
+            ++dropped;
+            continue;
         }
         strncpy(e_[n_].name, name, OTP_NAME_MAX);
         e_[n_].name[OTP_NAME_MAX] = '\0';
         memcpy(e_[n_].key, key, key_len);
         e_[n_].key_len = (uint8_t)key_len;
         ++n_;
+    }
+    if (dropped > 0) {
+        Serial.printf("[store] !! 还有 %d 条超出上限 %d，已忽略：请提高 OTP_MAX_ENTRIES 或清理密钥表\n",
+                      dropped, OTP_MAX_ENTRIES);
     }
     Serial.printf("[store] 已载入 %d 条密钥\n", n_);
     return true;
@@ -148,7 +153,7 @@ bool OtpStore::add(const char* name, const uint8_t* key, size_t key_len, String&
         return false;
     }
     if (n_ >= OTP_MAX_ENTRIES) {
-        err = "entry limit reached (32)";
+        err = String("entry limit reached (") + OTP_MAX_ENTRIES + ")";
         return false;
     }
 

@@ -65,7 +65,7 @@ curl http://otpserver.local/status
 {"uptime_s":38,"version":"0.1.0",
  "wifi":{"connected":true,"ssid":"Xiaomi_91C1","ip":"192.168.4.4","rssi":-44,"mac":"30:30:F9:5C:A0:B4"},
  "time":{"source":"ntp","synced":true,"last_sync_epoch":1794221300,"epoch":1794221311,"remaining":29},
- "store":{"entries":3,"capacity":32,"fs_used":16384,"fs_total":1048576}}
+ "store":{"entries":22,"capacity":128,"fs_used":16384,"fs_total":1048576}}
 ```
 
 `time.source` 三种取值，含义见「时间源」一节。
@@ -197,7 +197,7 @@ TOTP 完全取决于 UTC 时间是否准确，而板子**没有 RTC 电池**，�
 
 - 路径：LittleFS 上的 `/otp/secrets.json`（明文 Base32）
 - 格式：`{"version":1,"entries":[{"name":"...","secret":"..."}]}`
-- 整表常驻 RAM（32 条上限 × ~180B）
+- 整表常驻 RAM（128 条上限 × ~180B ≈ 23KB，`.bss` 静态数组，不做动态分配）
 - 写回是「写临时文件 → 删旧文件 → rename」，掉电不会留下半个文件
 - 文件损坏时**拒绝服务而不是覆盖**（宁可 503，也不静默抹掉你导入的密钥）
 
@@ -235,7 +235,7 @@ python3 tools/e2e_test.py http://192.168.4.4
 ## 9. 已知限制
 
 - 只支持 TOTP / SHA1 / 30 秒 / 6 位（故意不做可配置，减少出错面）
-- 条目上限 32，名字 1..48 字节，允许 `A-Z a-z 0-9 . _ - @ +`
+- 条目上限 128（`OTP_MAX_ENTRIES`，改宏即可），名字 1..48 字节，允许 `A-Z a-z 0-9 . _ - @ +`
 - 名字里的 `@ + %` 等字符在 URL 里要做百分号编码（服务端会解码路径段，但不会把 `+` 当空格）
 - 没有鉴权、没有 HTTPS（局域网内明文 HTTP）
 - 没有 OTA 上传入口（分区已预留双槽，将来可加）

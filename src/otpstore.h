@@ -3,10 +3,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// 密钥表：整个表常驻 RAM（32 条 × ~170B ≈ 5.4KB），改动时整表写回 LittleFS。
+// 密钥表：整个表常驻 RAM（128 条 × ~180B ≈ 23KB），改动时整表写回 LittleFS。
 // 写回是"写临时文件 + 删除旧文件 + rename"，掉电不会留下半个文件。
 
-#define OTP_MAX_ENTRIES 32
+#define OTP_MAX_ENTRIES 128
 #define OTP_NAME_MAX 48 // 不含结尾 NUL（够放 `issuer-邮箱`，如 jianguoyun-gaoxj040620@gmail.com）
 #define OTP_KEY_MAX 128
 
